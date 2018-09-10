@@ -1,0 +1,10 @@
+﻿  erosionlbm_reconstructed_v3.cpp
+erosionlbm_reconstructed_v3.cpp(279): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+erosionlbm_reconstructed_v3.cpp(280): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+  Generating code
+  1 of 266 functions ( 0.4%) were compiled, the rest were copied from previous compilation.
+    0 functions were new in current compilation
+    0 functions had inline decision re-evaluated but remain unchanged
+  Finished generating code
+  erosionlbm_reconstructed_v3.vcxproj -> c:\users\lukas\documents\visual studio 2015\Projects\erosionlbm_reconstructed_v3\Release\erosionlbm_reconstructed_v3.exe
+  erosionlbm_reconstructed_v3.vcxproj -> c:\users\lukas\documents\visual studio 2015\Projects\erosionlbm_reconstructed_v3\Release\erosionlbm_reconstructed_v3.pdb (Full PDB)

@@ -1,0 +1,5 @@
+﻿  erosionlbm_reconstructed_v3.cpp
+c:\users\lukas\documents\visual studio 2015\projects\erosionlbm_reconstructed_v3\erosionlbm_reconstructed_v3\erosionlbm_reconstructed_v3.cpp(274): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+c:\users\lukas\documents\visual studio 2015\projects\erosionlbm_reconstructed_v3\erosionlbm_reconstructed_v3\erosionlbm_reconstructed_v3.cpp(275): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+  erosionlbm_reconstructed_v3.vcxproj -> c:\users\lukas\documents\visual studio 2015\Projects\erosionlbm_reconstructed_v3\Debug\erosionlbm_reconstructed_v3.exe
+  erosionlbm_reconstructed_v3.vcxproj -> c:\users\lukas\documents\visual studio 2015\Projects\erosionlbm_reconstructed_v3\Debug\erosionlbm_reconstructed_v3.pdb (Full PDB)
