@@ -53,9 +53,10 @@ typedef vector<double> dvec;
 double sq3inv = 0.577350269189626;
 double sq2inv = 0.707106781186547;
 double sq3 = 1.732050807568877;
+double sq2 = 1.414213562373095;
 double pi = 3.1415926535897932384626433;
 
-int Nx = 120;
+int Nx = 80;
 int Ny = 50;
 int Nz = 50;
 int edfforcedir = 0; //0 = no gravity. 1 = x. 2 = y. 3 = z.
@@ -72,13 +73,12 @@ double Bvel[3] = { 0.1, 0, 0 };
 double latspace = 1.;
 
 //double erosiontol = 4e-8;
-double delta_t = 1.;
-double masspernode = 1e-5; // Amount of mass per solid node. units = kg?
+double masspernode = 0.3; // Amount of mass per solid node. units = kg?
 double kappa_er = 1.; // material property of solid. depends on toughness and density.
-double WDWforce = 7.e-11; //Wan-Der-Waals force
+double VDW_0 = 7.e-6; //Wan-Der-Waals force
 int updatefreq = 700;
 double c = 1.;
-double tau = 0.502;
+double tau = 0.52;
 double mu = c*c*(tau - 0.5);
 double umax_theo = 0.1;
 double Re = 1;
@@ -87,7 +87,8 @@ double Lz = (Nz - 1)*latspace;
 double gg = 0.001;
 double F = mu * 10 / Lz;
 int cellist[27] = { 3, 2, 3, 2, 1, 2, 3, 2, 3  ,  2, 1, 2, 1, 0, 1, 2, 1, 2  ,  3, 2, 3, 2, 1, 2, 3, 2, 3 };
-
+double Delta_T = 10.*latspace/Bvel[0]; //Need Delta_T to be bigger than characteristic time. Hence, the factor 10 in front of L/U.
+double dt = 1.;
 
 
 
@@ -302,7 +303,7 @@ Solid_list::Solid_list(int choice, Grid& grid, double rotation_x, momentum_direc
 		cout << "\n Sphere chosen! \n";
 		cout << "\n Input radius: ";
 		//cin >> radius1;
-		radius1 = 11.;
+		radius1 = 13.;
 		//		stringstream(tempstr) >> radius;
 		//		if (radius1 * 2 > 1) {
 		//			cout << "Radius too large! must be between 0 and 1";
@@ -869,6 +870,36 @@ private:
 	int Ncubedtot = Nxtot*Nytot*Nztot;
 };
 
+class vectorNcubed {
+public:
+	dvec element;		//size: Ncubed
+
+	vectorNcubed() {
+		element.resize(Ncubed);
+		fill(element.begin(), element.end(), 0.);
+	};
+
+	void clear() {
+		fill(element.begin(), element.end(), 0.);
+	}
+
+	int index(int ix, int iy, int iz) {
+		int ind = ix + iy*Nx + iz*Nx*Ny;
+		return ind;
+	}
+
+	double& operator()(int ix, int iy, int iz) {
+		return element[ix + iy*Nx + iz*Nx*Ny];
+	}
+
+private:
+	int Nxtot = Nx + 2;
+	int Nytot = Ny + 2;
+	int Nztot = Nz + 2;
+	int Ncubed = Nx*Ny*Nz;
+	int Ncubedtot = Nxtot*Nytot*Nztot;
+};
+
 
 //... should prob försöka lägga alla vektorer i en å samma klass med massa olika () operatorer bara.
 
@@ -889,7 +920,8 @@ void bouncebackBC(direction_density& ftemp, direction_density& f, momentum_direc
 
 void collision(Solid_list& solid_list, direction_density& f, direction_density& ftemp, EDF& feq, momentum_direction& e);
 
-void computestress(momentum_direction& e, direction_density& ftemp, direction_density& f, EDF& feq, Solid_list& solid_list, Stresstensor& stresstensor, Normalvector& nhat, Wall_force& tau_stress, vector3Ncubed& F_D, density& erodelist);
+void computestress(momentum_direction& e, direction_density& ftemp, direction_density& f, EDF& feq, Solid_list& solid_list, Stresstensor& stresstensor, Normalvector& nhat, Wall_force& tau_stress, vector3Ncubed& F_sum, density& masschange, vectorNcubed& F_vdw, int i_er, int i_Fvdw, density& rho);
+double VDWforce(int x, int y, int z);
 
 void updatePBC(direction_density& f);
 void updateBC(direction_density& f, int t, double Bvel[3], density& rho, momentum_direction& e, velocity& u);
@@ -900,8 +932,8 @@ vector<int> readBC(string x0BC, string xNBC, string y0BC, string yNBC, string z0
 void computetorque(Solid_list& solid_list, Wall_force& tau_stress, vector3Ncubed& torque);
 dvec crossproduct(Wall_force& tau_stress, double r[3], int ix, int iy, int iz);
 
-void erosion(Solid_list& solid_list, momentum_direction& e, vector3Ncubed& F_sum, density& rho, direction_density& f, int forcedirection, FILE * solfile, density& erodelist, Normalvector& nhat);
-
+void erosion(Solid_list& solid_list, momentum_direction& e, vector3Ncubed& F_sum, density& rho, direction_density& f, int forcedirection, FILE * solfile, density& erodelist, Normalvector& nhat, vectorNcubed& ero_reso_check, vectorNcubed& F_vdw, FILE * errorfile);
+void erodepoint(int ix, int iy, int iz, density& masschange, Solid_list& solid_list, density& rho, Normalvector& nhat, direction_density& f, momentum_direction& e);
 vector<int> BCtype = readBC(x0BC, xNBC, y0BC, yNBC, z0BC, zNBC);
 int main()
 {
@@ -919,6 +951,7 @@ int main()
 	FILE * nhatfile = fopen("C:\\Users\\lukas\\documents\\MATLAB\\Erosion_LBM\\stresserror\\nhat_v9.txt", "w");
 	FILE * torfile = fopen("C:\\Users\\lukas\\documents\\MATLAB\\Erosion_LBM\\stresserror\\torfile_v9.txt", "w");
 	FILE * erodefile = fopen("C:\\Users\\lukas\\documents\\MATLAB\\Erosion_LBM\\stresserror\\erodefile_v9.txt", "w");
+	FILE * errorfile = fopen("C:\\Users\\lukas\\documents\\MATLAB\\Erosion_LBM\\stresserror\\errorfile_v9.txt", "w");
 	int obchoice;
 	int tend;
 	int printi;
@@ -939,6 +972,8 @@ int main()
 	vector3Ncubed F_sum;
 	vector3Ncubed torque;
 	density masschange;
+	vectorNcubed ero_reso_check; //erosion resolution check. It's used to check if we erode faster than Delta_T or not.
+	vectorNcubed F_vdw;
 	masschange.clear();
 	//==========================================================================================================
 	// Choosing object to put in flow and applying IC.
@@ -964,7 +999,7 @@ int main()
 	// Kolla att figuren som printades ut i solid_list roterar korrekt. Sen kör en lång simulering med olika vinklar.
 	cout << "Grid and object created. Running simulation for t = \n";
 	//cin >> tend;
-	tend = 5001;
+	tend = 2001;
 	IC(e, f, ftemp, solid_list);
 	updateBC(f, -1, Bvel, rho, e, u);
 	updateBC(ftemp, -1, Bvel, rho, e, u);
@@ -972,28 +1007,31 @@ int main()
 	//==========================================================================================================
 	// Main program.
 	int i_er = 1;
+	int i_Fvdw = 1;
 
 	for (int t = 0; t < tend; t++) {
 		cout << t << " ";
 		stream(solid_list, f, ftemp, e);
 		updateBC(ftemp, t, Bvel, rho, e, u);
-		macrovariables(u, rho, solid_list, ftemp, e);
-		//			umax = find_umax(u);
-		//			uav = find_uav(u);
-		//			fprintf(reyfile, "%e %e %e\n", umax, Bvel[0] * 16. / mu, uav);
-		if (t == 250 * printi) {
+		macrovariables(u, rho, solid_list, ftemp, e); 
+//		umax = find_umax(u);
+//		uav = find_uav(u);
+//		fprintf(reyfile, "%e %e %e\n", umax, Bvel[0] * 16. / mu, uav);
+		if (t == 100 * printi) {
 			printstuff(velfile, densfile, parfile, reyfile, stressfile, forcefile, nhatfile, sttensfile, torfile, erodefile, t, u, rho, tau_stress, F_D, nhat, stresstensor, torque, masschange);
 			printi++;
 		}
 		edf(solid_list, u, rho, feq, e, edfforcedir);
 		collision(solid_list, f, ftemp, feq, e);
 		updateBC(f, t, Bvel, rho, e, u);
-		computestress(e, ftemp, f, feq, solid_list, stresstensor, nhat, tau_stress, F_sum, masschange);
-		computetorque(solid_list, tau_stress, torque);
-		//		if (t == i_er*updatefreq) {
-		//			erosion(solid_list, e, F_sum, rho, f, edfforcedir, solfile, masschange, nhat);
-		//			i_er++;
-		//		}
+		computestress(e, ftemp, f, feq, solid_list, stresstensor, nhat, tau_stress, F_sum, masschange, F_vdw, i_er, i_Fvdw, rho);
+		if (i_Fvdw == i_er)
+			i_Fvdw++;
+//		computetorque(solid_list, tau_stress, torque);
+		if (t == i_er*Delta_T) {
+			erosion(solid_list, e, F_sum, rho, f, edfforcedir, solfile, masschange, nhat, ero_reso_check, F_vdw, errorfile);
+			i_er++;
+		}
 	}
 	cout << "\n Done! \n";
 	solid_list.clear_list();
@@ -1300,25 +1338,20 @@ void stream(Solid_list& solid_list, direction_density& f, direction_density& fte
 	}*/
 
 	for (a = 0; a < 27; a++) {
-		//		cout << "\n a = " << a << "\n";
 		ashift = 2 * (13 - a);
 		for (iz = 0; iz < Nz; iz++) {
-			//			cout << "\n";
 			for (iy = 0; iy < Ny; iy++) {
 				for (ix = 0; ix < Nx; ix++) {
 					switch (solid_list(ix, iy, iz)) {
 					case 1:	// interior solid node = Do nothing
 						break;
 					case 0:	// surface solid node = bounceback BC
-							//						bouncebackBC(ftemp, f, e, ix, iy, iz, a, ashift);
 						ftemp(ix, iy, iz, a) = f(ix + e(26 - a, 0), iy + e(26 - a, 1), iz + e(26 - a, 2), a);
 						break;
 					case -1: // fluid node = regular stream
-							 //						if (solid_list(ix + e(26 - a, 0), iy + e(26 - a, 1), iz + e(26 - a, 2)) == -1)
 						ftemp(ix, iy, iz, a) = f(ix + e(26 - a, 0), iy + e(26 - a, 1), iz + e(26 - a, 2), a);	//the e:s shifts ix,iy,iz to the node streaming into the node we're looking at. 
 						break;
 					}
-					//					cout << " " << ftemp(ix, iy, iz, a) << " ";
 				}
 			}
 		}
@@ -1966,8 +1999,21 @@ vector<int> readBC(string x0BC, string xNBC, string y0BC, string yNBC, string z0
 
 }
 
-
-void computestress(momentum_direction& e, direction_density& ftemp, direction_density& f, EDF& feq, Solid_list& solid_list, Stresstensor& stresstensor, Normalvector& nhat, Wall_force& tau_stress, vector3Ncubed& F_sum, density& masschange) {
+void computeVDWforce(int ix, int iy, int iz, momentum_direction& e, Solid_list& solid_list, vectorNcubed& F_vdw) {
+	double WDWsum = 0.;
+	int ixshift = 0;
+	int iyshift = 0;
+	int izshift = 0;
+	for (int a = 0; a < 27; a++) {
+		ixshift = ix + e(a, 0);
+		iyshift = iy + e(a, 1);
+		izshift = iz + e(a, 2);
+		if (solid_list(ixshift, iyshift, izshift) == 1 || solid_list(ixshift, iyshift, izshift) == 0) // add wdwforce from all solid nodes.
+			WDWsum = WDWsum + VDWforce(e(a, 0), e(a, 1), e(a, 2));
+	}
+	F_vdw(ix, iy, iz) = WDWsum;
+}
+void computestress(momentum_direction& e, direction_density& ftemp, direction_density& f, EDF& feq, Solid_list& solid_list, Stresstensor& stresstensor, Normalvector& nhat, Wall_force& tau_stress, vector3Ncubed& F_sum, density& masschange, vectorNcubed& F_vdw, int i_er, int i_Fvdw, density& rho) {
 	int ix = 0;
 	int iy = 0;
 	int iz = 0;
@@ -1982,8 +2028,8 @@ void computestress(momentum_direction& e, direction_density& ftemp, direction_de
 	double normfactvec[3] = { sq3inv, sq2inv, 1. };
 	double normfactor = 0;
 	int Nf = 0; //number of nnn fluid points
-	double WDWsqsum = 0.;
-	double FFsq = 0;
+	double WDWsum = 0.;
+	double FF = 0;
 	
 	// Calculating stress tensor, normal vectors, forces and erosion.
 	stresstensor.clear();
@@ -2027,8 +2073,9 @@ void computestress(momentum_direction& e, direction_density& ftemp, direction_de
 						if (nhat(ix, iy, iz, i) == 0)
 							normcount++;
 					}
-					if (normcount == 3)
-						cout << "\n Error in computestress! normal vector = (0, 0, 0).\n";
+					if (normcount == 3) { // This corresponds to an isolated point. In theory this would just float away with the fluid so we erode away that point. Might be thin ice here.
+						cout << "\n Isolated point! normal vector = (0, 0, 0).\n";
+					}
 					normfactor = normvec[normcount];
 					/*					ixtemp = nhat(ix, iy, iz, 0);
 					iytemp = nhat(ix, iy, iz, 1);
@@ -2059,18 +2106,12 @@ void computestress(momentum_direction& e, direction_density& ftemp, direction_de
 							//tau_stress(ix, iy, iz, i) += -e(a,j)*stresstensor(ix + e(a, 0), iy + e(a, 1), iz + e(a, 2), i, j);
 						}//
 					}
+					if (i_Fvdw == i_er)
+						computeVDWforce(ix, iy, iz, e, solid_list, F_vdw);
 
-					WDWsqsum = 0.;
-					for (a = 0; a < 27; a++) {
-						ixshift = ix + e(a, 0);
-						iyshift = iy + e(a, 1);
-						izshift = iz + e(a, 2);
-						if (solid_list(ixshift, iyshift, izshift) == 1 || solid_list(ixshift, iyshift, izshift) == 0) // add wdwforce from all solid nodes.
-							WDWsqsum = WDWsqsum + WDWforce;
-					}
-					FFsq = (pow(tau_stress(ix, iy, iz, 0), 2) + pow(tau_stress(ix, iy, iz, 1), 2) + pow(tau_stress(ix, iy, iz, 2), 2));
-					if (FFsq > WDWsqsum) { //if the fluid force is greater than the WDW force from all solid nodes.
-						masschange(ix, iy, iz) += delta_t*(-kappa_er*sqrt(FFsq - WDWsqsum)); //erode point. How to choose limit for erosion of a point? (m_star). Need to add code for F_sum. Only things that contribute should go into the sum.
+					FF = sqrt(pow(tau_stress(ix, iy, iz, 0), 2) + pow(tau_stress(ix, iy, iz, 1), 2) + pow(tau_stress(ix, iy, iz, 2), 2));
+					if (FF > F_vdw(ix,iy,iz)) { //if the fluid force is greater than the WDW force from all solid nodes.
+						masschange(ix, iy, iz) += -kappa_er*FF*dt; // first part of mass change eq. Second part is in function "erosion".
 					}
 					else
 						masschange(ix, iy, iz) += 0; //don't erode point
@@ -2083,7 +2124,17 @@ void computestress(momentum_direction& e, direction_density& ftemp, direction_de
 	}
 
 
-
+}
+double VDWforce(int x, int y, int z) {
+	// VDW force scaling with 1/r^2.
+	if (x != 0 && y != 0 && z != 0)
+		return 0.33333333333333*VDW_0; // r = sqrt(3). 1/3 ~= 0.33333... 
+	if ((x != 0 && y != 0) || (x != 0 && z != 0) || (y != 0 && z != 0))
+		return 0.5*VDW_0; // r = sqrt(2) => 1/2
+	if (x != 0 || y != 0 || z != 0)
+		return VDW_0; // r = 1.
+	//if none of the ifs trigger, x = y = z = 0.
+	return 0; // the solid node itself.
 }
 
 void computetorque(Solid_list& solid_list, Wall_force& tau_stress, vector3Ncubed& torque) {
@@ -2125,7 +2176,7 @@ dvec crossproduct(Wall_force& tau_stress, double r[3], int ix, int iy, int iz) {
 }
 
 // Function should be after collosion.
-void erosion(Solid_list& solid_list, momentum_direction& e, vector3Ncubed& F_sum, density& rho, direction_density& f, int forcedirection, FILE * solfile, density& masschange, Normalvector& nhat) {
+void erosion(Solid_list& solid_list, momentum_direction& e, vector3Ncubed& F_sum, density& rho, direction_density& f, int forcedirection, FILE * solfile, density& masschange, Normalvector& nhat, vectorNcubed& ero_reso_check, vectorNcubed& F_vdw, FILE * errorfile) {
 	int ix = 0;
 	int iy = 0;
 	int iz = 0;
@@ -2133,7 +2184,6 @@ void erosion(Solid_list& solid_list, momentum_direction& e, vector3Ncubed& F_sum
 	int iyshift = 0;
 	int izshift = 0;
 	int a = 0;
-	double WDWsqsum = 0.; //Wan-der-waals force squared sum.
 	double FFsq = 0.; //Fluid Force squared.
 	double ueq[3] = { 0 };
 	double weights[4] = { 0 };
@@ -2168,34 +2218,104 @@ void erosion(Solid_list& solid_list, momentum_direction& e, vector3Ncubed& F_sum
 		}
 	}
 	*/
+
+	//erodes all points that's lost all their mass
 	for (iz = 0; iz < Nz; iz++) {
 		for (iy = 0; iy < Ny; iy++) {
 			for (ix = 0; ix < Nx; ix++) {
-				if (masschange(ix, iy, iz) > masspernode && solid_list(ix, iy, iz) == 0) {
 
-					masschange(ix, iy, iz) = 0.;
-					solid_list(ix, iy, iz) = -1; //surface node becomes fluid node.
-					rho(ix, iy, iz) = rho(ix + nhat(ix, iy, iz, 0), iy + nhat(ix, iy, iz, 1), iz + nhat(ix, iy, iz, 2)); //fluid node is initialized with same density as the interface node. This could prob be extrapolated.
-																														 // check that rho != 0 at new points.
-					for (a = 0; a < 27; a++) { //Initialize new fluid point with same f as interface node. Also, check all nearby nodes. If it's a interior solid node, it becomes a surface.
-						f(ix, iy, iz, a) = f(ix + nhat(ix, iy, iz, 0), iy + nhat(ix, iy, iz, 1), iz + nhat(ix, iy, iz, 2), a);
-						ixshift = ix + e(a, 0);
-						iyshift = iy + e(a, 1);
-						izshift = iz + e(a, 2);
-						if (solid_list(ixshift, iyshift, izshift) == 1) {
-							solid_list(ixshift, iyshift, izshift) = 0;
-							f(ixshift, iyshift, izshift, a) = weights[cellist[a]];
-							rho(ixshift, iyshift, izshift) = 1.;
+				masschange(ix, iy, iz) += kappa_er*Delta_T*F_vdw(ix, iy, iz);
+				if (solid_list(ix, iy, iz) == 0) { // if we're at a surface point
+					ero_reso_check(ix, iy, iz) += 1.; 
+					if (-masschange(ix, iy, iz) > masspernode) { // if more mass has eroded away than existing mass per point
+						if (ero_reso_check(ix, iy, iz) == 1.) { // if a point eroded away during one Delta_T window => too low resolution.
+							cout << "Resolution too low! Increase Delta_T, mass per node or Kappa.\n";
+							fprintf(errorfile, "%i", 1);
 						}
+						ero_reso_check(ix, iy, iz) = 0.;
+						erodepoint(ix, iy, iz, masschange, solid_list, rho, nhat, f, e);
+						/*masschange(ix, iy, iz) = 0.;
+						solid_list(ix, iy, iz) = -1; //surface node becomes fluid node.
+						rho(ix, iy, iz) = rho(ix + nhat(ix, iy, iz, 0), iy + nhat(ix, iy, iz, 1), iz + nhat(ix, iy, iz, 2)); //fluid node is initialized with same density as the interface node. This could prob be extrapolated.
+																															 // check that rho != 0 at new points.
+						for (a = 0; a < 27; a++) { //Initialize new fluid point with same f as interface node. Also, check all nearby nodes. If it's a interior solid node, it becomes a surface.
+							f(ix, iy, iz, a) = f(ix + nhat(ix, iy, iz, 0), iy + nhat(ix, iy, iz, 1), iz + nhat(ix, iy, iz, 2), a);
+							ixshift = ix + e(a, 0);
+							iyshift = iy + e(a, 1);
+							izshift = iz + e(a, 2);
+							if (solid_list(ixshift, iyshift, izshift) == 1) {
+								solid_list(ixshift, iyshift, izshift) = 0;
+								f(ixshift, iyshift, izshift, a) = weights[cellist[a]];
+								rho(ixshift, iyshift, izshift) = 1.;
+							}
+						}*/
 					}
+				}
 
+			}
+		}
+	}
+	
+	//erodes all points that become isolated
+	for (iz = 0; iz < Nz; iz++) {
+		for (iy = 0; iy < Ny; iy++) {
+			for (ix = 0; ix < Nx; ix++) {
+				if (solid_list(ix, iy, iz) == 0) {	// surface node
+					if (IsForeverAlone(ix, iy, iz, solid_list, e) == 1) // if surface node is isolated
+						erodepoint(ix, iy, iz, masschange, solid_list, rho, nhat, f, e);
 				}
 			}
 		}
 	}
+
+
+
 	solid_list.printsolid_list(solfile);
 	//masschange.clear();
 	//F_sum.clear();
+}
+void erodepoint(int ix, int iy, int iz, density& masschange, Solid_list& solid_list, density& rho, Normalvector& nhat, direction_density& f, momentum_direction& e) {
+	double weights[4] = { 0 };
+	weights[0] = 0.296296296296296;// 8. / 27.;	
+	weights[1] = 0.074074074074074;// 2. / 27.;
+	weights[2] = 0.018518518518519;// 1. / 54.;
+	weights[3] = 0.004629629629630;// 1. / 216.;
+	int ixshift = 0;
+	int iyshift = 0;
+	int izshift = 0;
+	masschange(ix, iy, iz) = 0.;
+	solid_list(ix, iy, iz) = -1; //surface node becomes fluid node.
+	rho(ix, iy, iz) = rho(ix + nhat(ix, iy, iz, 0), iy + nhat(ix, iy, iz, 1), iz + nhat(ix, iy, iz, 2)); // fluid node is initialized with same density as the interface node. This could prob be extrapolated.
+																										 // check that rho != 0 at new points.
+	for (int a = 0; a < 27; a++) { //Initialize new fluid point with same f as interface node. Also, check all nearby nodes. If it's a interior solid node, it becomes a surface.
+		f(ix, iy, iz, a) = f(ix + nhat(ix, iy, iz, 0), iy + nhat(ix, iy, iz, 1), iz + nhat(ix, iy, iz, 2), a); // same f as interface node.
+		ixshift = ix + e(a, 0);
+		iyshift = iy + e(a, 1);
+		izshift = iz + e(a, 2);
+		if (solid_list(ixshift, iyshift, izshift) == 1) { // if solid node, turn it to a surface node, initialize it with IC f, set rho = 1.
+			solid_list(ixshift, iyshift, izshift) = 0;
+			f(ixshift, iyshift, izshift, a) = weights[cellist[a]];
+			rho(ixshift, iyshift, izshift) = 1.;
+		}
+	}
+}
+int IsForeverAlone(int ix, int iy, int iz, Solid_list& solid_list, momentum_direction& e) {
+	//checks if solid (surface) node is isolated. 
+	int ixshift;
+	int iyshift;
+	int izshift;
+	int friends = 26;
+	for (int a = 0; a < 27; a++) {		// look through all nearby nodes
+		ixshift = ix + e(a, 0);
+		iyshift = iy + e(a, 1);
+		izshift = iz + e(a, 2);
+		if (solid_list(ixshift, iyshift, izshift) == -1)
+			friends--;
+	}
+	if (friends == 0)
+		return 1;
+	else
+		return 0;
 }
 
 /*
